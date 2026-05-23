@@ -235,7 +235,9 @@ def _register_tools(mcp: FastMCP) -> None:
         """Semantic search across existing memories."""
         uid = user_id or get_default_user_id()
 
-        kwargs: dict[str, Any] = {"user_id": uid, "query": query}
+        kwargs: dict[str, Any] = {"query": query}
+        if uid:
+            filters - {**(filters or {}), "user_id": uid}
         if agent_id:
             kwargs["agent_id"] = agent_id
         if run_id:

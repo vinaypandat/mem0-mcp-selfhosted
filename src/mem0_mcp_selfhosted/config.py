@@ -73,15 +73,18 @@ def build_config() -> tuple[dict[str, Any], list[ProviderInfo], dict[str, Any] |
         llm_config["ollama_base_url"] = _resolve_ollama_url("MEM0_LLM_URL")
 
     # --- Embedder ---
-    embed_provider = env("MEM0_EMBED_PROVIDER", "ollama")
-    embed_model = env("MEM0_EMBED_MODEL", "bge-m3")
-    embed_url = _resolve_ollama_url("MEM0_EMBED_URL")
-    embed_dims = int(env("MEM0_EMBED_DIMS", "1024"))
+    embed_provider = env("MEM0_EMBED_PROVIDER", "lmstudio")
+    embed_model = env("MEM0_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5@f32")
+    embed_dims = int(env("MEM0_EMBED_DIMS", "768"))
 
     embedder_config: dict[str, Any] = {
         "model": embed_model,
     }
-    if embed_provider == "ollama":
+    if embed_provider == "lmstudio":
+        embed_url = env("MEM0_EMBED_URL") or "http://localhost:1234/v1"
+        embedder_config["lmstudio_base_url"] = embed_url
+    elif embed_provider == "ollama":
+        embed_url = _resolve_ollama_url("MEM0_EMBED_URL")
         embedder_config["ollama_base_url"] = embed_url
 
     # --- Vector Store ---

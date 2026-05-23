@@ -30,8 +30,8 @@ class TestBuildConfig:
 
         assert config_dict["llm"]["provider"] == "anthropic"
         assert config_dict["llm"]["config"]["model"] == "claude-opus-4-6"
-        assert config_dict["embedder"]["provider"] == "ollama"
-        assert config_dict["embedder"]["config"]["model"] == "bge-m3"
+        assert config_dict["embedder"]["provider"] == "lmstudio"
+        assert config_dict["embedder"]["config"]["model"] == "text-embedding-nomic-embed-text-v1.5@f32"
         assert config_dict["vector_store"]["provider"] == "qdrant"
         assert config_dict["vector_store"]["config"]["collection_name"] == "mem0_mcp_selfhosted"
         assert "graph_store" not in config_dict
@@ -106,7 +106,7 @@ class TestBuildConfig:
     def test_explicit_embedder_provider(self):
         """Embedder provider is always explicit (never default to openai)."""
         config_dict, *_ = self._build_with_env({})
-        assert config_dict["embedder"]["provider"] == "ollama"
+        assert config_dict["embedder"]["provider"] == "lmstudio"
 
     def test_provider_info_structure(self):
         """Provider info list includes Anthropic and Ollama entries."""
@@ -442,6 +442,7 @@ class TestBuildConfig:
         env = {
             "MEM0_ENABLE_GRAPH": "true",
             "MEM0_GRAPH_LLM_PROVIDER": "ollama",
+            "MEM0_EMBED_PROVIDER": "ollama",
             "MEM0_EMBED_URL": "http://embed-box:11434",
         }
         config_dict, *_ = self._build_with_env(env)
@@ -559,10 +560,10 @@ class TestBuildConfig:
         assert config_dict["graph_store"]["llm"]["provider"] == "gemini"
 
     def test_mem0_provider_does_not_cascade_to_embed(self):
-        """MEM0_PROVIDER does NOT cascade to embed provider (stays ollama)."""
+        """MEM0_PROVIDER does NOT cascade to embed provider (stays lmstudio by default)."""
         env = {"MEM0_PROVIDER": "anthropic"}
         config_dict, *_ = self._build_with_env(env)
-        assert config_dict["embedder"]["provider"] == "ollama"
+        assert config_dict["embedder"]["provider"] == "lmstudio"
 
     def test_invalid_mem0_provider_raises_valueerror(self):
         """Invalid MEM0_PROVIDER raises ValueError even when MEM0_LLM_PROVIDER overrides."""
@@ -616,14 +617,15 @@ class TestBuildConfig:
         assert config_dict["llm"]["config"]["ollama_base_url"] == "http://10.0.0.5:11434"
 
     def test_ollama_url_cascades_to_embed(self):
-        """MEM0_OLLAMA_URL sets embed ollama_base_url when MEM0_EMBED_URL not set."""
-        env = {"MEM0_OLLAMA_URL": "http://192.168.0.208:11434"}
+        """MEM0_OLLAMA_URL sets embed ollama_base_url when MEM0_EMBED_URL not set (ollama provider)."""
+        env = {"MEM0_EMBED_PROVIDER": "ollama", "MEM0_OLLAMA_URL": "http://192.168.0.208:11434"}
         config_dict, *_ = self._build_with_env(env)
         assert config_dict["embedder"]["config"]["ollama_base_url"] == "http://192.168.0.208:11434"
 
     def test_embed_url_overrides_ollama_url(self):
-        """MEM0_EMBED_URL takes precedence over MEM0_OLLAMA_URL for embed."""
+        """MEM0_EMBED_URL takes precedence over MEM0_OLLAMA_URL for embed (ollama provider)."""
         env = {
+            "MEM0_EMBED_PROVIDER": "ollama",
             "MEM0_OLLAMA_URL": "http://192.168.0.208:11434",
             "MEM0_EMBED_URL": "http://10.0.0.5:11434",
         }
@@ -667,6 +669,34 @@ class TestBuildConfig:
         env = {"MEM0_OLLAMA_URL": "http://192.168.0.208:11434"}
         config_dict, *_ = self._build_with_env(env)
         assert "ollama_base_url" not in config_dict["llm"]["config"]
+
+    def test_lmstudio_embed_default_url(self):
+        """LM Studio embedder defaults to localhost:1234/v1."""
+        config_dict, *_ = self._build_with_env({})
+        assert config_dict["embedder"]["provider"] == "lmstudio"
+        assert config_dict["embedder"]["config"]["lmstudio_base_url"] == "http://localhost:1234/v1"
+        assert config_dict["vector_store"]["config"]["embedding_model_dims"] == 768
+
+    def test_lmstudio_embed_url_override(self):
+        """MEM0_EMBED_URL overrides the default LM Studio URL."""
+        env = {"MEM0_EMBED_URL": "http://192.168.0.10:1234/v1"}
+        config_dict, *_ = self._build_with_env(env)
+        assert config_dict["embedder"]["config"]["lmstudio_base_url"] == "http://192.168.0.10:1234/v1"
+
+    def test_lmstudio_embed_no_ollama_url_bleed(self):
+        """MEM0_OLLAMA_URL does NOT affect LM Studio embedder URL."""
+        env = {"MEM0_OLLAMA_URL": "http://192.168.0.208:11434"}
+        config_dict, *_ = self._build_with_env(env)
+        # lmstudio provider should use its own default, not the Ollama URL
+        assert config_dict["embedder"]["config"]["lmstudio_base_url"] == "http://localhost:1234/v1"
+
+    def test_ollama_embed_provider_explicit(self):
+        """Setting MEM0_EMBED_PROVIDER=ollama uses ollama_base_url, not lmstudio_base_url."""
+        env = {"MEM0_EMBED_PROVIDER": "ollama", "MEM0_EMBED_URL": "http://localhost:11434"}
+        config_dict, *_ = self._build_with_env(env)
+        assert config_dict["embedder"]["provider"] == "ollama"
+        assert "ollama_base_url" in config_dict["embedder"]["config"]
+        assert "lmstudio_base_url" not in config_dict["embedder"]["config"]
 
     def test_ollama_url_cascades_to_contradiction_llm(self):
         """MEM0_OLLAMA_URL cascades to contradiction LLM URL for gemini_split."""
@@ -720,10 +750,11 @@ class TestBuildConfig:
 
     # --- End-to-end cascade (14.x) ---
 
-    def test_two_env_vars_configure_full_ollama_stack(self):
-        """MEM0_PROVIDER + MEM0_OLLAMA_URL configure LLM, embed, and graph in one shot."""
+    def test_three_env_vars_configure_full_ollama_stack(self):
+        """MEM0_PROVIDER + MEM0_EMBED_PROVIDER + MEM0_OLLAMA_URL configure LLM, embed, and graph."""
         env = {
             "MEM0_PROVIDER": "ollama",
+            "MEM0_EMBED_PROVIDER": "ollama",
             "MEM0_OLLAMA_URL": "http://192.168.0.208:11434",
             "MEM0_ENABLE_GRAPH": "true",
         }

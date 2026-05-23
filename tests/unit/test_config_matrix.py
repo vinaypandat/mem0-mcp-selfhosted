@@ -15,6 +15,7 @@ from mem0_mcp_selfhosted.config import build_config
 # Base env vars required for all tests
 _BASE_ENV = {
     "MEM0_QDRANT_URL": "http://localhost:6333",
+    "MEM0_EMBED_PROVIDER": "ollama",
     "MEM0_EMBED_URL": "http://localhost:11434",
     "MEM0_EMBED_MODEL": "bge-m3",
     "MEM0_EMBED_DIMS": "1024",

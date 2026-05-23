@@ -237,7 +237,7 @@ def _register_tools(mcp: FastMCP) -> None:
 
         kwargs: dict[str, Any] = {"query": query}
         if uid:
-            filters - {**(filters or {}), "user_id": uid}
+            filters = {**(filters or {}), "user_id": uid}
         if agent_id:
             kwargs["agent_id"] = agent_id
         if run_id:
